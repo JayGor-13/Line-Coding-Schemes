@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Line Coding Simulator</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Digital Line Coding Simulator</h1>
+            <p>Visualize data transmission techniques</p>
+        </header>
+
+        <main>
+            <div class="controls">
+                <div class="input-group">
+                    <label for="dataInput">Enter Data Bits (0s and 1s):</label>
+                    <input type="text" id="dataInput" pattern="[01]+" placeholder="e.g., 1011001">
+                </div>
+
+                <div class="input-group">
+                    <label for="schemeSelect">Choose Line Coding Scheme:</label>
+                    <select id="schemeSelect">
+                        <option value="nrzl">NRZ-L (Non-Return-to-Zero Level)</option>
+                        <option value="nrzi">NRZ-I (Non-Return-to-Zero Inverted)</option>
+                        <option value="rz">RZ (Return-to-Zero)</option>
+                        <option value="manchester">Manchester</option>
+                        <option value="diff_manchester">Differential Manchester</option>
+                        <!-- Add more schemes here if needed -->
+                    </select>
+                </div>
+
+                <button id="simulateButton">Simulate!</button>
+                 <div id="errorMessages" class="error"></div>
+            </div>
+
+            <div class="simulation-area">
+                <h2>Simulation Output:</h2>
+                <div id="waveformContainer">
+                    <!-- SVG will be generated here by JavaScript -->
+                    <svg id="waveform" width="100%" height="300"></svg>
+                </div>
+                 <div id="explanation">
+                    <h3>Scheme Explanation:</h3>
+                    <p id="schemeDescription">Select a scheme and enter data to see the simulation and explanation.</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>An Innovative Assignment Concept</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
