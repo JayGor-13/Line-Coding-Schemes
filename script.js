@@ -1,349 +1,323 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM Elements ---
-    const dataInput = document.getElementById('dataInput');
-    const schemeSelect = document.getElementById('schemeSelect');
-    const simulateButton = document.getElementById('simulateButton');
-    const waveformSvg = document.getElementById('waveform');
-    const errorMessageDiv = document.getElementById('errorMessages');
-    const schemeDescriptionP = document.getElementById('schemeDescription');
-    const waveformContainer = document.getElementById('waveformContainer');
+// --- Simple FFT Implementation (Adapted from various sources) ---
+// NOTE: This is a basic implementation for demonstration.
+// For production, a more robust library might be preferable.
 
-    // --- SVG Constants ---
-    const SVG_NS = "http://www.w3.org/2000/svg";
-    const PADDING = 40;
-    const BIT_HEIGHT = 50; // Vertical distance for +V to 0 or -V to 0
-    const BIT_WIDTH = 60;  // Horizontal width per bit
+function Complex(re, im) {
+    this.re = re;
+    this.im = im;
+}
 
-    // --- Explanations ---
-    const explanations = {
-        nrzl: "<b>NRZ-L (Non-Return-to-Zero Level):</b> Voltage level represents the bit value. Typically, High voltage = 1, Low voltage = 0 (or vice-versa). Level doesn't return to zero during the bit interval.",
-        nrzi: "<b>NRZ-I (Non-Return-to-Zero Inverted):</b> A transition (inversion) at the beginning of the bit interval represents a '1'. No transition represents a '0'. Useful for detecting signal presence.",
-        rz: "<b>RZ (Return-to-Zero):</b> A '1' is represented by a signal pulse (e.g., High then Zero) within the bit interval. A '0' is represented by no pulse (or Low). Returns to zero level mid-bit, requiring more bandwidth.",
-        manchester: "<b>Manchester:</b> Combines data and clock. A '1' is a Low-to-High transition in the middle of the bit interval. A '0' is a High-to-Low transition. Always has a mid-bit transition.",
-        diff_manchester: "<b>Differential Manchester:</b> Combines data and clock. Always a transition in the middle. A '0' causes an *additional* transition at the *start* of the bit interval. A '1' has no transition at the start. Depends on the previous level."
+Complex.prototype.add = function(other) {
+    return new Complex(this.re + other.re, this.im + other.im);
+}
+
+Complex.prototype.sub = function(other) {
+    return new Complex(this.re - other.re, this.im - other.im);
+}
+
+Complex.prototype.mul = function(other) {
+    return new Complex(this.re * other.re - this.im * other.im,
+                       this.re * other.im + this.im * other.re);
+}
+
+Complex.prototype.magnitude = function() {
+    return Math.sqrt(this.re * this.re + this.im * this.im);
+}
+
+function fft(signal) {
+    const N = signal.length;
+    if (N <= 1) return signal.map(val => new Complex(val, 0));
+
+    // Check if N is a power of 2 (required for basic Cooley-Tukey)
+    if ((N & (N - 1)) !== 0) {
+         console.warn("FFT input size is not a power of 2. Padding with zeros.");
+         // Find the next power of 2
+         let nextPow2 = 1;
+         while (nextPow2 < N) {
+             nextPow2 <<= 1;
+         }
+         // Pad the signal with zeros
+         const paddedSignal = [...signal];
+         while (paddedSignal.length < nextPow2) {
+             paddedSignal.push(0);
+         }
+         return fft(paddedSignal); // Recursive call with padded signal
+    }
+
+
+    // Cooley-Tukey FFT Algorithm
+    const even = [];
+    const odd = [];
+    for (let i = 0; i < N / 2; i++) {
+        even.push(signal[2 * i]);
+        odd.push(signal[2 * i + 1]);
+    }
+
+    const fftEven = fft(even);
+    const fftOdd = fft(odd);
+
+    const result = new Array(N);
+    for (let k = 0; k < N / 2; k++) {
+        const angle = -2 * Math.PI * k / N;
+        const twiddle = new Complex(Math.cos(angle), Math.sin(angle));
+        const term = twiddle.mul(fftOdd[k]);
+        result[k] = fftEven[k].add(term);
+        result[k + N / 2] = fftEven[k].sub(term);
+    }
+    return result;
+}
+
+function fftshift(complexArray) {
+    const N = complexArray.length;
+    const halfN = Math.ceil(N / 2); // Use ceil for odd lengths too
+    const shifted = new Array(N);
+    for (let i = 0; i < halfN; i++) {
+        shifted[i] = complexArray[i + Math.floor(N/2)];
+    }
+     for (let i = 0; i < Math.floor(N/2); i++) {
+        shifted[i + halfN] = complexArray[i];
+    }
+    return shifted;
+}
+
+// --- Plotting Logic ---
+
+const carrierAmpInput = document.getElementById('carrierAmp');
+const carrierFreqInput = document.getElementById('carrierFreq');
+const bitDurationInput = document.getElementById('bitDuration');
+const binaryDataInput = document.getElementById('binaryData');
+const samplingFreqInput = document.getElementById('samplingFreq');
+const freqDeviationInput = document.getElementById('freqDeviation');
+const dataErrorSpan = document.getElementById('data-error');
+const plotTitle = document.getElementById('plot-title');
+
+
+function validateInputs() {
+    const binaryData = binaryDataInput.value;
+    const isValid = /^[01]+$/.test(binaryData);
+    if (!isValid && binaryData.length > 0) {
+        dataErrorSpan.textContent = "Only '0' and '1' allowed.";
+        return false;
+    } else if (binaryData.length === 0) {
+         dataErrorSpan.textContent = "Binary data cannot be empty.";
+         return false;
+    } else {
+        dataErrorSpan.textContent = ""; // Clear error
+        return true;
+    }
+}
+
+binaryDataInput.addEventListener('input', validateInputs);
+
+
+function generatePlots(modulationType) {
+    if (!validateInputs()) {
+        alert("Please fix the errors in the input fields.");
+        return;
+    }
+
+    plotTitle.textContent = `${modulationType} Modulation Plots`;
+    document.body.classList.toggle('fsk-mode', modulationType === 'FSK');
+
+
+    // Get input values
+    const vc = parseFloat(carrierAmpInput.value);
+    const fc = parseFloat(carrierFreqInput.value);
+    const bitDuration = parseFloat(bitDurationInput.value);
+    const bitDataString = binaryDataInput.value;
+    const bitData = bitDataString.split('').map(Number);
+    const fs = parseFloat(samplingFreqInput.value);
+    const fd = parseFloat(freqDeviationInput.value); // Frequency deviation for FSK
+
+    // --- Basic Parameter Validation ---
+    if (isNaN(vc) || isNaN(fc) || isNaN(bitDuration) || isNaN(fs) || (modulationType === 'FSK' && isNaN(fd))) {
+        alert("Please ensure all numeric fields have valid numbers.");
+        return;
+    }
+     if (fc <= 0 || bitDuration <= 0 || fs <= 0 || (modulationType === 'FSK' && fd < 0) ) {
+        alert("Frequencies, amplitude, and duration must be positive (Fd can be 0).");
+        return;
+    }
+
+    const maxFreq = modulationType === 'FSK' ? fc + fd : fc;
+    if (fs <= 2 * maxFreq) {
+        alert(`Sampling frequency (Fs=${fs}Hz) should be significantly greater than 2 * max signal frequency (~${maxFreq}Hz) to avoid aliasing. Increase Fs.`);
+        // return; // Allow plotting but warn the user
+    }
+
+
+    // Time vector
+    const totalDuration = bitData.length * bitDuration;
+    const dt = 1 / fs;
+    const t = [];
+    for (let time = 0; time < totalDuration; time += dt) {
+        t.push(time);
+    }
+    const n = t.length; // Number of samples
+
+    // --- 1. Carrier Signal ---
+    const v_c = t.map(time => vc * Math.sin(2 * Math.PI * fc * time));
+
+    // Plot Carrier
+    Plotly.newPlot('carrierPlot', [{
+        x: t,
+        y: v_c,
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Carrier'
+    }], {
+        title: 'Carrier Signal (v_c)',
+        xaxis: { title: 'Time (s)' },
+        yaxis: { title: 'Amplitude (V)' },
+        margin: { l: 50, r: 30, t: 50, b: 40 } // Adjust margins
+    });
+
+    // --- 2. Modulating Signal (NRZ) ---
+    let sqSignal = [];
+    let modulatingSignalType = '';
+
+    if (modulationType === 'ASK') {
+        // Unipolar NRZ (0 or 1)
+        modulatingSignalType = 'Unipolar NRZ';
+        sqSignal = t.map(time => {
+            const bitIndex = Math.min(Math.floor(time / bitDuration), bitData.length - 1);
+            return bitData[bitIndex]; // 0 or 1
+        });
+    } else { // FSK or PSK
+        // Bipolar NRZ (-1 or 1)
+        modulatingSignalType = 'Bipolar NRZ';
+        sqSignal = t.map(time => {
+            const bitIndex = Math.min(Math.floor(time / bitDuration), bitData.length - 1);
+            return bitData[bitIndex] === 1 ? 1 : -1; // 1 or -1
+        });
+    }
+
+     // Plot Modulating Signal
+     Plotly.newPlot('modulatingPlot', [{
+         x: t,
+         y: sqSignal,
+         type: 'scatter',
+         mode: 'lines',
+         line: { shape: 'hv' }, // Step-like plot
+         name: 'Modulating'
+     }], {
+         title: `Modulating Signal (${modulatingSignalType}: ${bitDataString})`,
+         xaxis: { title: 'Time (s)' },
+         yaxis: { title: 'Amplitude (V)', range: modulationType === 'ASK' ? [-0.2, 1.2] : [-1.2, 1.2] }, // Adjust y-axis range
+         margin: { l: 50, r: 30, t: 50, b: 40 }
+     });
+
+
+    // --- 3. Modulated Signal ---
+    let v_modulated = [];
+    let modulatedSignalName = '';
+
+    switch (modulationType) {
+        case 'ASK':
+            modulatedSignalName = 'ASK Signal (v_a)';
+            // Use the unipolar sqSignal generated above
+            v_modulated = v_c.map((carrierVal, index) => carrierVal * sqSignal[index]);
+            break;
+        case 'FSK':
+            modulatedSignalName = 'FSK Signal (v_f)';
+             // Use the bipolar sqSignal generated above
+            v_modulated = t.map((time, index) =>
+                vc * Math.sin(2 * Math.PI * (fc + sqSignal[index] * fd) * time)
+            );
+            break;
+        case 'PSK': // BPSK (Binary Phase Shift Keying)
+            modulatedSignalName = 'PSK Signal (v_p)';
+             // Use the bipolar sqSignal generated above
+            v_modulated = v_c.map((carrierVal, index) => carrierVal * sqSignal[index]);
+            // This works because multiplying by -1 is equivalent to a 180-degree phase shift:
+            // A*sin(wt) * (-1) = A*sin(wt + pi)
+            break;
+        default:
+            console.error("Unknown modulation type");
+            return;
+    }
+
+     // Plot Modulated Signal
+    const modulatedTrace = {
+        x: t,
+        y: v_modulated,
+        type: 'scatter',
+        mode: 'lines',
+        name: modulationType
     };
+    // Optional: Overlay modulating signal for context (like Python code)
+     const modulatingOverlayTrace = {
+        x: t,
+        y: sqSignal.map(v => v * vc * (modulationType === 'ASK' ? 0.5 : 0.8) + (modulationType === 'ASK' ? vc*0.1 : 0)), // Scale/offset for visibility
+        type: 'scatter',
+        mode: 'lines',
+        line: { dash: 'dot', color: 'red', shape: 'hv'},
+        name: 'Modulating (scaled)'
+     };
 
-    // --- Event Listener ---
-    simulateButton.addEventListener('click', handleSimulation);
-    // Optionally simulate on input change too (can be intensive)
-    // dataInput.addEventListener('input', handleSimulation);
-    // schemeSelect.addEventListener('change', handleSimulation);
-
-    function handleSimulation() {
-        const dataBits = dataInput.value.trim();
-        const selectedScheme = schemeSelect.value;
-
-        // --- Input Validation ---
-        errorMessageDiv.textContent = ''; // Clear previous errors
-        if (!dataBits) {
-            errorMessageDiv.textContent = 'Error: Data bits cannot be empty.';
-            clearWaveform();
-            updateExplanation(selectedScheme); // Still show explanation
-            return;
-        }
-        if (!/^[01]+$/.test(dataBits)) {
-            errorMessageDiv.textContent = 'Error: Input must contain only 0s and 1s.';
-            clearWaveform();
-             updateExplanation(selectedScheme);
-            return;
-        }
-
-        // --- Generate Waveform Data ---
-        let waveformPoints = [];
-        try {
-             waveformPoints = generateWaveform(dataBits, selectedScheme);
-        } catch (error) {
-            errorMessageDiv.textContent = `Error generating waveform: ${error.message}`;
-            clearWaveform();
-            updateExplanation(selectedScheme);
-            return;
-        }
+    Plotly.newPlot('modulatedPlot', [modulatedTrace, modulatingOverlayTrace], {
+        title: modulatedSignalName,
+        xaxis: { title: 'Time (s)' },
+        yaxis: { title: 'Amplitude (V)' },
+        margin: { l: 50, r: 30, t: 50, b: 40 },
+        legend: { y: 0.95 }
+    });
 
 
-        // --- Draw Waveform ---
-        drawWaveform(dataBits, waveformPoints, selectedScheme);
-
-        // --- Update Explanation ---
-        updateExplanation(selectedScheme);
+    // --- 4. Spectrum of Modulated Signal ---
+    // Ensure the signal length is suitable for FFT (pad if needed by the fft function)
+    const padded_v_modulated = [...v_modulated]; // Start with original
+    let final_n = n;
+    if ((n & (n - 1)) !== 0) {
+         let nextPow2 = 1;
+         while (nextPow2 < n) nextPow2 <<= 1;
+         final_n = nextPow2;
+         while (padded_v_modulated.length < final_n) padded_v_modulated.push(0);
+         console.log(`Padding signal from ${n} to ${final_n} samples for FFT.`);
     }
 
-    // --- Waveform Generation Logic ---
-    function generateWaveform(bits, scheme) {
-        let points = [];
-        let currentLevel = 1; // Start high for NRZ-I/Diff Man. (Common convention)
 
-        // Y-coordinates mapping: +1 -> HIGH_Y, 0 -> ZERO_Y, -1 -> LOW_Y
-        const HIGH_Y = PADDING;
-        const ZERO_Y = PADDING + BIT_HEIGHT;
-        const LOW_Y = PADDING + 2 * BIT_HEIGHT;
+    const v_mod_spec_complex = fftshift(fft(padded_v_modulated));
+    const v_mod_spec_mag = v_mod_spec_complex.map(c => c.magnitude() / final_n); // Normalize
 
-        // Helper to add points
-        const addPoint = (bitIndex, timeFraction, level) => {
-            const x = PADDING + bitIndex * BIT_WIDTH + timeFraction * BIT_WIDTH;
-            let y;
-            if (level === 1) y = HIGH_Y;
-            else if (level === 0) y = ZERO_Y;
-            else if (level === -1) y = LOW_Y;
-            else y = ZERO_Y; // Default safe value
-
-            // Avoid duplicate consecutive points at the same y-level unless necessary (like start/end)
-            if (points.length > 0) {
-                 const lastPoint = points[points.length - 1];
-                 // Only add if x is different OR y is different
-                 if (x > lastPoint.x || y !== lastPoint.y) {
-                     points.push({ x, y });
-                 } else if (x === lastPoint.x && y !== lastPoint.y) {
-                     // If x is same but y changed (vertical line needed), update last point's y instead of adding new
-                     // This simplifies polyline but might hide vertical segments needed for strict RZ viz
-                     // Let's add it for clarity in RZ/Manchester
-                      points.push({ x, y });
-                 }
-            } else {
-                points.push({ x, y }); // Always add the first point
-            }
-        };
-
-         // Add starting point for continuity
-         let initialY;
-         if (scheme === 'nrzi' || scheme === 'diff_manchester') {
-              initialY = currentLevel === 1 ? HIGH_Y : LOW_Y; // Start based on initial level assumption
-         } else if (bits[0] === '1' && (scheme === 'nrzl' || scheme === 'rz' || scheme === 'manchester')) {
-            initialY = HIGH_Y;
-         } else if (bits[0] === '0' && (scheme === 'nrzl')) {
-             initialY = LOW_Y;
-         }
-         else { // RZ 0, Manchester 0 start High before dropping
-            initialY = (scheme === 'manchester' && bits[0] === '0') || (scheme === 'rz' && bits[0] === '1') ? HIGH_Y : LOW_Y;
-            if(scheme === 'rz' && bits[0] === '0') initialY = LOW_Y; // RZ 0 starts and stays low
-             if(scheme === 'nrzl' && bits[0] === '0') initialY = LOW_Y;
-         }
-
-         // Adjust for RZ which starts at 0 if the first bit pulse goes there
-         if (scheme === 'rz' && bits[0] === '1') {
-             // It will go high, then zero. Start visualization from zero level axis perhaps?
-             // Or start High. Let's assume signal starts at the first bit's representation.
-             initialY = HIGH_Y;
-         } else if (scheme === 'rz' && bits[0] === '0') {
-             initialY = LOW_Y; // RZ 0 is Low
-         }
-
-
-        // Add an initial point slightly before the first bit for visual clarity
-        if (points.length === 0) {
-            let startY = ZERO_Y; // Default start at zero axis visually
-             if (scheme === 'nrzi' || scheme === 'diff_manchester') {
-                 startY = currentLevel > 0 ? HIGH_Y : LOW_Y;
-             } else if (scheme === 'nrzl') {
-                 startY = bits[0] === '1' ? HIGH_Y : LOW_Y;
-             } else if (scheme === 'manchester') {
-                 // Manchester starts High for 0, Low for 1, before the mid-bit transition
-                 startY = bits[0] === '0' ? HIGH_Y : LOW_Y;
-             } else if (scheme === 'rz') {
-                 // RZ starts High for 1, Low for 0
-                 startY = bits[0] === '1' ? HIGH_Y : LOW_Y;
-             }
-             addPoint(0, 0, mapYToLevel(startY, HIGH_Y, LOW_Y)); // Add the very first point at t=0
-        }
-
-
-        // --- Scheme Logic ---
-        for (let i = 0; i < bits.length; i++) {
-            const bit = parseInt(bits[i]);
-
-            switch (scheme) {
-                case 'nrzl':
-                    currentLevel = (bit === 1) ? 1 : -1;
-                    addPoint(i, 0, currentLevel); // Level at the start of the bit
-                    addPoint(i, 1, currentLevel); // Level maintained to the end
-                    break;
-
-                case 'nrzi':
-                    if (bit === 1) {
-                        currentLevel *= -1; // Invert level for '1'
-                    }
-                    // No change for '0'
-                    addPoint(i, 0, currentLevel); // Level at the start
-                    addPoint(i, 1, currentLevel); // Level maintained
-                    break;
-
-                case 'rz':
-                    if (bit === 1) {
-                        addPoint(i, 0, 1);    // Go High at start
-                        addPoint(i, 0.5, 1);  // Stay High until mid
-                        addPoint(i, 0.5, 0);  // Return to Zero at mid
-                        addPoint(i, 1, 0);    // Stay Zero until end
-                    } else { // bit === 0
-                        addPoint(i, 0, -1);   // Go Low at start (or stay 0 depending on convention - let's use negative)
-                        addPoint(i, 1, -1);   // Stay Low until end (RZ 0 = low level for duration)
-                         // Or Use 0 level for '0' bit? Let's stick to -1 for clear visual distinction
-                         // addPoint(i, 0, 0);
-                         // addPoint(i, 1, 0);
-                    }
-                    currentLevel = 0; // RZ always ends at zero conceptually for the next bit decision, though signal might be low
-                    break;
-
-                case 'manchester':
-                    if (bit === 1) { // 1: Low to High transition
-                        addPoint(i, 0, -1);   // Start Low
-                        addPoint(i, 0.5, -1); // Stay Low until mid
-                        addPoint(i, 0.5, 1);  // Transition High at mid
-                        addPoint(i, 1, 1);    // Stay High until end
-                        currentLevel = 1; // Ends high
-                    } else { // 0: High to Low transition
-                        addPoint(i, 0, 1);    // Start High
-                        addPoint(i, 0.5, 1);  // Stay High until mid
-                        addPoint(i, 0.5, -1); // Transition Low at mid
-                        addPoint(i, 1, -1);   // Stay Low until end
-                        currentLevel = -1; // Ends low
-                    }
-                    break;
-
-                case 'diff_manchester':
-                    // Mid-bit transition always happens, mirrors previous level's end state
-                    let midTransitionLevel = currentLevel * -1;
-
-                    if (bit === 0) {
-                        // Invert level at the START of the bit for '0'
-                        currentLevel *= -1;
-                    }
-                    // No inversion at start for '1'
-
-                    // Draw first half (maintaining level or inverted level for '0')
-                    addPoint(i, 0, currentLevel);
-                    addPoint(i, 0.5, currentLevel);
-
-                    // Draw second half (always transition mid-bit)
-                    currentLevel *= -1; // The mid-bit transition
-                    addPoint(i, 0.5, currentLevel);
-                    addPoint(i, 1, currentLevel);
-                    break;
-
-                default:
-                    console.error("Unknown scheme:", scheme);
-                    throw new Error(`Encoding scheme "${scheme}" not implemented.`);
-
-            }
-        }
-        return points;
+    // Frequency axis
+    const df = fs / final_n;
+    const f = [];
+    for (let i = 0; i < final_n; i++) {
+        f.push(-fs / 2 + i * df);
     }
 
-      // Helper to map Y coordinate back to logical level (approximate)
-    function mapYToLevel(y, highY, lowY) {
-        const zeroY = (highY + lowY) / 2; // Calculate zero midpoint dynamically
-        if (Math.abs(y - highY) < Math.abs(y - zeroY)) return 1;
-        if (Math.abs(y - lowY) < Math.abs(y - zeroY)) return -1;
-        return 0;
-    }
-
-    // --- Drawing Function ---
-    function drawWaveform(bits, points, scheme) {
-        clearWaveform();
-
-        const numBits = bits.length;
-        const totalWidth = PADDING * 2 + numBits * BIT_WIDTH;
-        const totalHeight = PADDING * 2 + 2 * BIT_HEIGHT; // Height accommodates High (+V) to Low (-V)
-
-        // Set SVG viewBox for responsiveness
-        waveformSvg.setAttribute('viewBox', `0 0 ${totalWidth} ${totalHeight}`);
-        waveformSvg.setAttribute('preserveAspectRatio', 'xMinYMid meet'); // Keep aspect ratio, align left-middle
-        // waveformSvg.style.minWidth = `${totalWidth}px`; // Ensure container respects minimum drawing width
-
-        const HIGH_Y = PADDING;
-        const ZERO_Y = PADDING + BIT_HEIGHT;
-        const LOW_Y = PADDING + 2 * BIT_HEIGHT;
-
-        // --- Draw Grid & Axes ---
-        // Horizontal Lines (Levels)
-        createLine(PADDING, HIGH_Y, totalWidth - PADDING, HIGH_Y, 'grid-line');
-        createLine(PADDING, ZERO_Y, totalWidth - PADDING, ZERO_Y, 'grid-line');
-        createLine(PADDING, LOW_Y, totalWidth - PADDING, LOW_Y, 'grid-line');
-
-        // Level Labels
-        createText('+V', PADDING - 5, HIGH_Y + 4, 'level-label'); // Offset slightly for clarity
-        createText(' 0', PADDING - 5, ZERO_Y + 4, 'level-label');
-        createText('-V', PADDING - 5, LOW_Y + 4, 'level-label');
-
-        // Vertical Lines (Bit Boundaries & Mid-points for relevant schemes)
-        for (let i = 0; i <= numBits; i++) {
-            const x = PADDING + i * BIT_WIDTH;
-            createLine(x, PADDING, x, totalHeight - PADDING, 'axis-line'); // Bit boundaries solid
-
-            // Dashed mid-bit lines for RZ, Manchester, Diff Manchester
-            if (i < numBits && ['rz', 'manchester', 'diff_manchester'].includes(scheme)) {
-                 const midX = x + BIT_WIDTH / 2;
-                 createLine(midX, PADDING, midX, totalHeight - PADDING, 'grid-line');
-            }
-        }
+    // Determine a sensible frequency range for plotting the spectrum
+    let freqRange = [-fc * 3, fc * 3]; // Default range
+     if (modulationType === 'FSK') {
+        freqRange = [-(fc + fd) * 2, (fc + fd) * 2];
+     }
+     // Ensure range covers the main lobes, prevent excessively wide range
+     const maxVisibleFreq = Math.max(fc + fd + 5*(1/bitDuration), fc + 5*(1/bitDuration)); // Heuristic
+     freqRange = [-Math.min(Math.abs(freqRange[0]), maxVisibleFreq*1.5) , Math.min(freqRange[1], maxVisibleFreq*1.5)];
+     // Ensure range is not zero
+     if (freqRange[0] === 0 && freqRange[1] === 0) freqRange = [-fs/4, fs/4];
+     if (freqRange[0] >= freqRange[1]) freqRange = [-fs/4, fs/4];
 
 
-        // --- Draw Data Bit Labels ---
-        for (let i = 0; i < numBits; i++) {
-            const x = PADDING + i * BIT_WIDTH + BIT_WIDTH / 2; // Center label in the bit interval
-            const y = PADDING - 10; // Position above the grid
-            createText(bits[i], x, y, 'data-bit-label');
-        }
+     // Plot Spectrum
+     Plotly.newPlot('spectrumPlot', [{
+         x: f,
+         y: v_mod_spec_mag,
+         type: 'scatter',
+         mode: 'lines',
+         name: 'Spectrum'
+     }], {
+         title: `Spectrum of ${modulationType} Signal`,
+         xaxis: { title: 'Frequency (Hz)', range: freqRange }, // Set dynamic range
+         yaxis: { title: 'Magnitude', type: 'linear' }, // Can change to 'log' if needed
+         margin: { l: 50, r: 30, t: 50, b: 40 }
+     });
 
+}
 
-        // --- Draw the Signal Waveform ---
-        if (points && points.length > 1) {
-            let pathData = `M ${points[0].x} ${points[0].y}`;
-            for (let i = 1; i < points.length; i++) {
-                 // Check for vertical line: same x, different y
-                 if (points[i].x === points[i-1].x && points[i].y !== points[i-1].y) {
-                    pathData += ` V ${points[i].y}`; // Use V for vertical line segment
-                 }
-                 // Check for horizontal line: different x, same y
-                 else if (points[i].x !== points[i-1].x && points[i].y === points[i-1].y) {
-                    pathData += ` H ${points[i].x}`; // Use H for horizontal line segment
-                 }
-                 // Diagonal or other cases: use L
-                 else {
-                    pathData += ` L ${points[i].x} ${points[i].y}`;
-                 }
-                // Standard Polyline approach (simpler):
-                // pathData += ` L ${points[i].x} ${points[i].y}`;
-            }
-
-            const path = document.createElementNS(SVG_NS, 'path');
-            path.setAttribute('d', pathData);
-            path.setAttribute('class', 'signal-line');
-            // Optional: Add drawing animation class if defined in CSS
-            // path.style.animation = 'drawLine 2s linear forwards';
-            waveformSvg.appendChild(path);
-        }
-    }
-
-    // --- Helper Functions for SVG Creation ---
-    function createLine(x1, y1, x2, y2, className) {
-        const line = document.createElementNS(SVG_NS, 'line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('class', className);
-        waveformSvg.appendChild(line);
-        return line;
-    }
-
-    function createText(content, x, y, className) {
-        const text = document.createElementNS(SVG_NS, 'text');
-        text.setAttribute('x', x);
-        text.setAttribute('y', y);
-        text.setAttribute('class', className);
-        text.textContent = content;
-        waveformSvg.appendChild(text);
-        return text;
-    }
-
-    function clearWaveform() {
-        waveformSvg.innerHTML = ''; // Clear previous drawing
-    }
-
-    function updateExplanation(scheme) {
-        schemeDescriptionP.innerHTML = explanations[scheme] || 'Select a scheme to see its description.';
-    }
-
-     // --- Initial State ---
-     updateExplanation(schemeSelect.value); // Show explanation for default selected scheme
-
-}); // End DOMContentLoaded
+// --- Initial Plot on Load ---
+// Optional: Generate a default plot when the page loads
+window.onload = () => {
+    generatePlots('ASK'); // Default to ASK
+};

@@ -3,56 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Line Coding Simulator</title>
+    <title>Digital Modulation Simulator</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
+
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Digital Line Coding Simulator</h1>
-            <p>Visualize data transmission techniques</p>
-        </header>
+    <h1>Digital Modulation Simulator</h1>
 
-        <main>
-            <div class="controls">
-                <div class="input-group">
-                    <label for="dataInput">Enter Data Bits (0s and 1s):</label>
-                    <input type="text" id="dataInput" pattern="[01]+" placeholder="e.g., 1011001">
-                </div>
+    <div class="controls">
+        <div class="control-group">
+            <label for="carrierAmp">Carrier Amplitude (Vc):</label>
+            <input type="number" id="carrierAmp" value="1" step="0.1">
+        </div>
+        <div class="control-group">
+            <label for="carrierFreq">Carrier Frequency (Fc) (Hz):</label>
+            <input type="number" id="carrierFreq" value="3" step="1" min="1">
+        </div>
+         <div class="control-group">
+            <label for="bitDuration">Bit Duration (Tb) (s):</label>
+            <input type="number" id="bitDuration" value="1" step="0.1" min="0.1">
+        </div>
+        <div class="control-group">
+            <label for="binaryData">Binary Data (e.g., 10110):</label>
+            <input type="text" id="binaryData" value="10110" pattern="[01]+">
+             <span id="data-error" class="error-message"></span>
+        </div>
+         <div class="control-group">
+            <label for="samplingFreq">Sampling Freq (Fs) (Hz):</label>
+            <input type="number" id="samplingFreq" value="1000" step="100" min="100">
+             <span class="info">(Must be > 2 * (Fc + Fd for FSK))</span>
+        </div>
+         <div class="control-group fsk-only">
+            <label for="freqDeviation">Freq. Deviation (Fd for FSK) (Hz):</label>
+            <input type="number" id="freqDeviation" value="5" step="1" min="0">
+        </div>
 
-                <div class="input-group">
-                    <label for="schemeSelect">Choose Line Coding Scheme:</label>
-                    <select id="schemeSelect">
-                        <option value="nrzl">NRZ-L (Non-Return-to-Zero Level)</option>
-                        <option value="nrzi">NRZ-I (Non-Return-to-Zero Inverted)</option>
-                        <option value="rz">RZ (Return-to-Zero)</option>
-                        <option value="manchester">Manchester</option>
-                        <option value="diff_manchester">Differential Manchester</option>
-                        <!-- Add more schemes here if needed -->
-                    </select>
-                </div>
+        <div class="button-group">
+            <button onclick="generatePlots('ASK')">Generate ASK</button>
+            <button onclick="generatePlots('FSK')">Generate FSK</button>
+            <button onclick="generatePlots('PSK')">Generate PSK</button>
+        </div>
+    </div>
 
-                <button id="simulateButton">Simulate!</button>
-                 <div id="errorMessages" class="error"></div>
-            </div>
-
-            <div class="simulation-area">
-                <h2>Simulation Output:</h2>
-                <div id="waveformContainer">
-                    <!-- SVG will be generated here by JavaScript -->
-                    <svg id="waveform" width="100%" height="300"></svg>
-                </div>
-                 <div id="explanation">
-                    <h3>Scheme Explanation:</h3>
-                    <p id="schemeDescription">Select a scheme and enter data to see the simulation and explanation.</p>
-                </div>
-            </div>
-        </main>
-
-        <footer>
-            <p>An Innovative Assignment Concept</p>
-        </footer>
+    <h2 id="plot-title">Modulation Plots</h2>
+    <div class="plots">
+        <div id="carrierPlot" class="plot-container"></div>
+        <div id="modulatingPlot" class="plot-container"></div>
+        <div id="modulatedPlot" class="plot-container"></div>
+        <div id="spectrumPlot" class="plot-container"></div>
     </div>
 
     <script src="script.js"></script>
